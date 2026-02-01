@@ -1,4 +1,6 @@
-# Resolución de Problemas - DNIe en Ubuntu 24.04
+# Resolución de Problemas - DNIe en Ubuntu 24.04 (con OpenSC)
+
+> **Nota:** Esta guía asume que usas **OpenSC** (solución recomendada), no libpkcs11-dnie.
 
 ## 🔍 Diagnóstico paso a paso
 
@@ -360,3 +362,102 @@ Pega toda la salida al pedir ayuda.
 - [FNMT - Verificación](https://www.sede.fnmt.gob.es/)
 - [Foro Ubuntu-es](https://www.ubuntu-es.org/)
 - [GitHub - Issues](https://github.com/tu-usuario/dnie-ubuntu-24.04/issues)
+
+---
+
+## 🎯 Verificación específica de OpenSC
+
+### Verificar que OpenSC está instalado
+
+```bash
+dpkg -l | grep opensc
+```
+
+**Salida esperada:**
+```
+ii  opensc  0.26.1-3  amd64  Smart card utilities with support for PKCS#15
+```
+
+❌ **Si no está instalado:**
+```bash
+sudo apt-get install opensc
+```
+
+---
+
+### Verificar que OpenSC detecta el DNIe
+
+```bash
+pkcs11-tool --module /usr/lib/x86_64-linux-gnu/opensc-pkcs11.so --list-slots
+```
+
+**Salida esperada:**
+```
+Available slots:
+Slot 0 (0x0): [Tu lector]
+  token label        : DNI electrónico
+  token manufacturer : DGP-FNMT
+  token model        : PKCS#15 emulated
+```
+
+❌ **Si dice "No slots":**
+- Verifica que el DNIe esté insertado
+- Reinicia pcscd: `sudo systemctl restart pcscd`
+- Verifica con pcsc_scan primero
+
+---
+
+### Verificar configuración de Firefox con OpenSC
+
+```bash
+cat ~/.mozilla/firefox/*.default-release/pkcs11.txt
+```
+
+**Debe contener:**
+```
+library=/usr/lib/x86_64-linux-gnu/opensc-pkcs11.so
+name=OpenSC
+```
+
+❌ **Si contiene libpkcs11-dnie.so:**
+```bash
+# Corregir a OpenSC
+cat > /tmp/pkcs11.txt << 'EOF'
+library=/usr/lib/x86_64-linux-gnu/opensc-pkcs11.so
+name=OpenSC
+EOF
+
+for perfil in $(ls ~/.mozilla/firefox/ | grep .default); do
+    cp /tmp/pkcs11.txt ~/.mozilla/firefox/$perfil/pkcs11.txt
+done
+```
+
+---
+
+## ⚠️ Si anteriormente usabas libpkcs11-dnie
+
+### Limpiar instalación anterior
+
+```bash
+# Eliminar libpkcs11-dnie (causa problemas de dependencias)
+sudo dpkg --remove --force-remove-reinstreq libpkcs11-dnie
+
+# Eliminar enlace simbólico de libassuan si existe
+sudo rm -f /lib/x86_64-linux-gnu/libassuan.so.0
+
+# Instalar OpenSC
+sudo apt-get install opensc
+
+# Reconfigurar Firefox
+pkill firefox
+cat > /tmp/pkcs11.txt << 'EOF'
+library=/usr/lib/x86_64-linux-gnu/opensc-pkcs11.so
+name=OpenSC
+EOF
+
+for perfil in $(ls ~/.mozilla/firefox/ | grep .default); do
+    cp /tmp/pkcs11.txt ~/.mozilla/firefox/$perfil/pkcs11.txt
+done
+```
+
+---
