@@ -1,6 +1,34 @@
-# Configurar DNIe en Ubuntu 24.04 LTS
+# 🪪 Configurar DNIe en Ubuntu 24.04 LTS
 
-Guía completa para configurar el DNI electrónico en Ubuntu 24.04, incluyendo solución al problema de `libassuan0` y configuración de Firefox.
+[![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04%20LTS-E95420?logo=ubuntu)](https://ubuntu.com/)
+[![Firefox](https://img.shields.io/badge/Firefox-Compatible-FF7139?logo=firefox)](https://www.mozilla.org/firefox/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
+Guía completa para configurar el **DNI electrónico español** en **Ubuntu 24.04 LTS**, incluyendo solución al problema de `libassuan0` y configuración de Firefox.
+
+> **⚠️ Nota importante:** Esta solución funciona **solo con Firefox**. Google Chrome no es compatible debido a incompatibilidades con `libassuan`.
+
+## 🚀 Instalación rápida
+
+```bash
+wget -O - https://raw.githubusercontent.com/xukrutdonut/dnie-ubuntu-24.04/master/instalar-dnie.sh | bash
+```
+
+O descarga y ejecuta manualmente:
+
+```bash
+git clone https://github.com/xukrutdonut/dnie-ubuntu-24.04.git
+cd dnie-ubuntu-24.04
+chmod +x instalar-dnie.sh
+./instalar-dnie.sh
+```
+
+## 📋 Contenido
+
+- **[README.md](README.md)** - Esta guía (instalación paso a paso)
+- **[instalar-dnie.sh](instalar-dnie.sh)** - Script de instalación automática
+- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** - Resolución de problemas detallada
+- **[DEVELOPMENT.md](DEVELOPMENT.md)** - Historial del desarrollo y decisiones técnicas
 
 ## 📋 Índice
 
@@ -262,11 +290,32 @@ Ver [`instalar-dnie.sh`](./instalar-dnie.sh) para instalación automatizada.
 
 ---
 
+---
+
+## 🤝 Contribuciones
+
+¿Encontraste un problema? ¿Tienes una mejora? **¡Las contribuciones son bienvenidas!**
+
+1. Fork el repositorio
+2. Crea tu rama de features (`git checkout -b feature/mejora`)
+3. Commit tus cambios (`git commit -m 'Añadir mejora'`)
+4. Push a la rama (`git push origin feature/mejora`)
+5. Abre un Pull Request
+
 ## 📄 Licencia
 
 Documentación de dominio público. Siéntete libre de usar, modificar y compartir.
 
+Este proyecto está bajo licencia MIT. Ver [LICENSE](LICENSE) para más detalles.
+
+---
+
+**⭐ Si te fue útil, dale una estrella al repositorio!**
+
+**📧 Contacto:** [GitHub Issues](https://github.com/xukrutdonut/dnie-ubuntu-24.04/issues)
+
 ---
 
 **Última actualización:** Febrero 2026  
-**Probado en:** Ubuntu 24.04 LTS
+**Probado en:** Ubuntu 24.04 LTS  
+**Mantenedor:** [@xukrutdonut](https://github.com/xukrutdonut)
