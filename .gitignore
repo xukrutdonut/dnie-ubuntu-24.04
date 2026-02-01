@@ -1,0 +1,6 @@
+*.deb
+*.tar.gz
+*.tar.bz2
+.mozilla/
+.pki/
+/tmp/
