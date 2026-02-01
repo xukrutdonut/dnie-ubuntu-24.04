@@ -1,13 +1,11 @@
 #!/bin/bash
 # Script de instalación automática de DNIe para Ubuntu 24.04
-# Fuentes:
-# - https://2tazasdelinux.blogspot.com/2025/04/hacer-funcionar-dnie-en-ubuntu.html
-# - https://www.asanzdiego.com/2024/08/configurar-un-lector-de-dni-electronico-en-firefox-con-autofirma-en-ubuntu-version-2024.html
+# Solución: OpenSC en lugar de libpkcs11-dnie
 
 set -e
 
 echo "================================================"
-echo "  Instalación DNIe en Ubuntu 24.04"
+echo "  Instalación DNIe en Ubuntu 24.04 con OpenSC"
 echo "================================================"
 echo ""
 
@@ -38,55 +36,19 @@ if ! grep -q "Ubuntu" /etc/os-release 2>/dev/null; then
     warning "Este script está diseñado para Ubuntu. Puede que funcione en otras distribuciones."
 fi
 
-echo "[1/6] Instalando dependencias del sistema..."
+echo "[1/4] Instalando dependencias del sistema..."
 sudo apt-get update -qq
-sudo apt-get install -y pcscd pcsc-tools libccid libnss3-tools pinentry-gtk2 || error "Falló instalación de dependencias"
-success "Dependencias instaladas"
+sudo apt-get install -y pcscd pcsc-tools opensc || error "Falló instalación de dependencias"
+success "Dependencias instaladas (pcscd, pcsc-tools, opensc)"
 
 echo ""
-echo "[2/6] Creando enlace simbólico para libassuan..."
-if [ -L /lib/x86_64-linux-gnu/libassuan.so.0 ]; then
-    warning "El enlace simbólico ya existe"
-else
-    sudo ln -sf /lib/x86_64-linux-gnu/libassuan.so.9 /lib/x86_64-linux-gnu/libassuan.so.0
-    success "Enlace simbólico creado"
-fi
-
-# Verificar enlace
-ls -la /lib/x86_64-linux-gnu/libassuan.so* | grep "libassuan.so.0"
-
-echo ""
-echo "[3/6] Descargando libpkcs11-dnie..."
-cd /tmp
-if [ ! -f libpkcs11-dnie_1.6.8_amd64.deb ]; then
-    wget -q --show-progress https://www.dnielectronico.es/descargas/CSP_para_Sistemas_Unix/libpkcs11-dnie_1.6.8_amd64.deb || error "Falló descarga del paquete"
-    success "Paquete descargado"
-else
-    warning "Paquete ya descargado"
-fi
-
-echo ""
-echo "[4/6] Instalando libpkcs11-dnie..."
-# Cerrar Firefox si está abierto
-pkill firefox 2>/dev/null || true
-sleep 1
-
-# Instalar forzando dependencias
-sudo dpkg -i --force-depends libpkcs11-dnie_1.6.8_amd64.deb 2>&1 | grep -v "^$" || true
-
-# Verificar instalación
-if dpkg -l | grep -q libpkcs11-dnie; then
-    success "libpkcs11-dnie instalado correctamente"
-else
-    error "Falló instalación de libpkcs11-dnie"
-fi
-
-echo ""
-echo "[5/6] Verificando lector de tarjetas..."
-# Iniciar servicio pcscd
+echo "[2/4] Configurando servicio pcscd..."
 sudo systemctl start pcscd
 sudo systemctl enable pcscd 2>/dev/null || true
+success "Servicio pcscd iniciado y habilitado"
 
+echo ""
+echo "[3/4] Verificando lector de tarjetas..."
 # Buscar lectores
 lectores=$(lsusb | grep -i "card\|reader\|smart" || true)
 if [ -n "$lectores" ]; then
@@ -100,23 +62,23 @@ echo ""
 echo "¿Tienes el DNIe insertado en el lector? (s/n)"
 read -r respuesta
 if [[ "$respuesta" =~ ^[Ss]$ ]]; then
-    echo "Verificando DNIe..."
-    timeout 3s pcsc_scan 2>&1 | head -20 || true
+    echo "Verificando DNIe con OpenSC..."
+    pkcs11-tool --module /usr/lib/x86_64-linux-gnu/opensc-pkcs11.so --list-slots | head -15 || warning "No se pudo verificar con OpenSC"
     success "Verificación del lector completada"
 else
-    warning "Inserta el DNIe y ejecuta: pcsc_scan"
+    warning "Inserta el DNIe y ejecuta: pkcs11-tool --module /usr/lib/x86_64-linux-gnu/opensc-pkcs11.so --list-slots"
 fi
 
 echo ""
-echo "[6/6] Configurando Firefox..."
+echo "[4/4] Configurando Firefox..."
 # Cerrar Firefox
 pkill firefox 2>/dev/null || true
 sleep 1
 
-# Crear archivo de configuración
+# Crear archivo de configuración con OpenSC
 cat > /tmp/pkcs11.txt << 'EOF'
-library=/usr/lib/libpkcs11-dnie.so
-name=DNI-e
+library=/usr/lib/x86_64-linux-gnu/opensc-pkcs11.so
+name=OpenSC
 EOF
 
 # Buscar perfiles de Firefox
@@ -133,7 +95,7 @@ else
         echo "  → Configurando perfil: $perfil"
         cp /tmp/pkcs11.txt "$HOME/.mozilla/firefox/$perfil/pkcs11.txt"
     done
-    success "Firefox configurado en $(echo "$perfiles" | wc -l) perfil(es)"
+    success "Firefox configurado en $(echo "$perfiles" | wc -l) perfil(es) con OpenSC"
     
     # Mostrar archivos creados
     echo ""
@@ -150,16 +112,18 @@ echo "Próximos pasos:"
 echo ""
 echo "1. Abre Firefox"
 echo "2. Ve a about:preferences#privacy → Dispositivos de seguridad"
-echo "3. Deberías ver 'DNI-e' en la lista"
+echo "3. Deberías ver 'OpenSC' en la lista"
 echo ""
 echo "Probar el DNIe:"
-echo "→ https://www.sede.fnmt.gob.es/certificados/persona-fisica/verificar-estado/solicitar-verificacion"
+echo "→ https://valide.redsara.es/valide/"
+echo "→ https://www.dnielectronico.es/PortalDNIe/"
 echo ""
 echo "Si tienes problemas:"
 echo "  • Reinicia pcscd: sudo systemctl restart pcscd"
 echo "  • Verifica el DNIe: pcsc_scan"
+echo "  • Verifica OpenSC: pkcs11-tool --module /usr/lib/x86_64-linux-gnu/opensc-pkcs11.so --list-slots"
 echo "  • Cierra completamente Firefox: pkill -9 firefox"
 echo ""
-warning "NOTA: Google Chrome NO funciona por incompatibilidad de libassuan."
-warning "      Usa SOLO Firefox para el DNIe en Ubuntu 24.04."
+success "OpenSC es software libre y mantenido activamente"
+warning "NOTA: Chrome NO es compatible. Usa SOLO Firefox."
 echo ""

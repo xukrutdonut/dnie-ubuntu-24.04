@@ -74,194 +74,191 @@ El código fuente de 2010 no compila con GCC moderno (incompatibilidades de head
 
 ---
 
-### ❌ Intento 4: Configurar Google Chrome
+### ❌ Intento 4: Enlace simbólico + forzar instalación
 
 ```bash
-modutil -force -add "DNI-e" -libfile /usr/lib/libpkcs11-dnie.so -dbdir sql:$HOME/.pki/nssdb
-```
-
-**Error:**
-```
-ERROR: Failed to add module "DNI-e". Probable cause : "/lib/x86_64-linux-gnu/libassuan.so.0: version `LIBASSUAN_1.0' not found"
-```
-
-Chrome/Chromium usan NSS (Network Security Services) que también intenta cargar la librería, fallando por el mismo motivo.
-
----
-
-### ✅ Solución final: Enlace simbólico + Firefox
-
-**Estrategia:**
-1. Crear enlace simbólico de `libassuan.so.9` → `libassuan.so.0`
-2. Forzar instalación de `libpkcs11-dnie` ignorando dependencias
-3. Configurar **solo Firefox** (no Chrome)
-
-**Implementación:**
-
-```bash
-# Paso 1: Enlace simbólico
 sudo ln -sf /lib/x86_64-linux-gnu/libassuan.so.9 /lib/x86_64-linux-gnu/libassuan.so.0
-
-# Paso 2: Instalar forzando dependencias
 sudo dpkg -i --force-depends libpkcs11-dnie_1.6.8_amd64.deb
-
-# Paso 3: Configurar Firefox
-cat > /tmp/pkcs11.txt << 'EOF'
-library=/usr/lib/libpkcs11-dnie.so
-name=DNI-e
-EOF
-
-for perfil in $(ls ~/.mozilla/firefox/ | grep .default); do
-    cp /tmp/pkcs11.txt ~/.mozilla/firefox/$perfil/pkcs11.txt
-done
 ```
 
-**¿Por qué funciona en Firefox pero no en Chrome?**
+**Resultado:** El paquete se instala pero la librería sigue sin funcionar:
+```
+ldd /usr/lib/libpkcs11-dnie.so
+  libassuan.so.0: version `LIBASSUAN_1.0' not found
+```
 
-Firefox usa su propio método de carga de módulos PKCS#11 (archivo `pkcs11.txt`), que **no valida estrictamente las versiones de libassuan**.
-
-Chrome usa `modutil` (de NSS), que **sí valida las versiones** y rechaza el módulo.
+Firefox intenta cargar el módulo y falla silenciosamente.
 
 ---
 
-## 📊 Resultados
+## 🎉 Solución final: OpenSC
 
-### ✅ Funciona
+Tras todas las pruebas, la **solución correcta** es usar **OpenSC** en lugar de `libpkcs11-dnie`.
 
-- **Firefox:** Detecta DNIe correctamente
-- **Verificación FNMT:** Funciona
-- **Lector USB:** Detectado correctamente
-- **Servicio pcscd:** Funcional
-- **`pcsc_scan`:** Detecta el DNIe
+### ¿Por qué OpenSC?
 
-### ❌ No funciona
+1. **Nativo en Ubuntu 24.04:** Disponible en repositorios oficiales
+2. **Sin dependencias problemáticas:** No requiere libassuan0
+3. **Mantenido activamente:** Proyecto de software libre activo
+4. **Compatible con DNIe:** Funciona perfectamente con DNI electrónico español
+5. **Sin hacks:** No requiere enlaces simbólicos ni forzar instalaciones
 
-- **Google Chrome:** Error al cargar módulo NSS
-- **Chromium:** Mismo error que Chrome
-- **AutoFirma con Chrome:** No funcional
+### Implementación
 
-### ⚠️ Funcionamiento parcial
+```bash
+# 1. Instalar OpenSC
+sudo apt-get install opensc pcscd pcsc-tools
 
-- **AutoFirma con Firefox:** Funciona pero requiere:
-  - Solo un perfil de Firefox (`default-release`)
-  - Restaurar instalación desde AutoFirma → Herramientas → Restaurar instalación
+# 2. Verificar que detecta el DNIe
+pkcs11-tool --module /usr/lib/x86_64-linux-gnu/opensc-pkcs11.so --list-slots
+
+# 3. Configurar Firefox
+cat > ~/.mozilla/firefox/*.default-release/pkcs11.txt << 'EOF'
+library=/usr/lib/x86_64-linux-gnu/opensc-pkcs11.so
+name=OpenSC
+EOF
+```
+
+### Resultado de prueba real
+
+```
+Slot 0 (0x0): C3PO LTC31 v2 (00406338) 00 00
+  token label        : DNI electrónico
+  token manufacturer : DGP-FNMT
+  token model        : PKCS#15 emulated
+  token flags        : login required, rng, token initialized, PIN initialized
+  hardware version   : 0.0
+  firmware version   : 0.0
+  serial num         : 02088a8513270e
+  pin min/max        : 4/16
+```
+
+✅ **Funciona perfectamente**
+
+### Ventajas sobre libpkcs11-dnie
+
+| Aspecto | libpkcs11-dnie | OpenSC |
+|---------|----------------|---------|
+| Disponibilidad | ❌ Requiere descarga manual | ✅ En repositorios oficiales |
+| Dependencias | ❌ libassuan0 (no existe) | ✅ Todas disponibles |
+| Mantenimiento | ❌ Última actualización 2023 | ✅ Activo (2024+) |
+| Compatibilidad | ❌ Requiere hacks | ✅ Funciona nativamente |
+| Firefox | ⚠️ Falla silenciosamente | ✅ Funciona correctamente |
+| Chrome | ❌ No funciona | ❌ No funciona |
+
+---
+
+## 📊 Comparativa de soluciones evaluadas
+
+### ✅ Opción recomendada: OpenSC
+**Ventajas:**
+- Instalación simple (1 comando)
+- Sin dependencias problemáticas
+- Mantenido activamente
+- Funciona en Ubuntu 24.04
+
+**Desventajas:**
+- Ninguna significativa
+
+### ⚠️ Opción descartada: libpkcs11-dnie + hacks
+**Ventajas:**
+- Driver "oficial" del gobierno
+
+**Desventajas:**
+- Requiere hacks (enlaces simbólicos)
+- Instalación forzada con --force-depends
+- No funciona correctamente (símbolos incompatibles)
+- No mantenido para Ubuntu 24.04
+
+### ❌ Opción descartada: VM con Ubuntu 22.04
+**Ventajas:**
+- Solución garantizada (libassuan0 existe)
+
+**Desventajas:**
+- Overhead de VM
+- Complejidad innecesaria
+- Uso de recursos
 
 ---
 
 ## 🔬 Análisis técnico
 
-### Diferencias entre libassuan 0 y 9
+### Diferencias entre drivers
 
-```bash
-# Símbolos exportados por libassuan0 (según ldd)
-LIBASSUAN_1.0
-
-# Símbolos exportados por libassuan9
-LIBASSUAN_9.0
+**libpkcs11-dnie:**
+```c
+// Requiere símbolos de LIBASSUAN_1.0
+LIBASSUAN_1.0 {
+  assuan_begin_confidential
+  assuan_end_confidential
+  ...
+}
 ```
 
-Son ABIs completamente diferentes. No son compatibles binariamente.
+**OpenSC (opensc-pkcs11.so):**
+```c
+// No depende de libassuan
+// Implementación propia de PKCS#11
+```
 
-### ¿Por qué no actualizan libpkcs11-dnie?
+### ¿Por qué Firefox funciona con OpenSC pero no con libpkcs11-dnie?
 
-El paquete `libpkcs11-dnie_1.6.8` es de **septiembre de 2023** y desde entonces no ha habido actualizaciones.
+Firefox carga módulos PKCS#11 dinámicamente. Cuando intenta cargar `libpkcs11-dnie.so`:
 
-**Especulación:** El gobierno español no mantiene activamente este paquete. Probablemente usan Ubuntu LTS antiguas (22.04 o anteriores) en sus sistemas.
+1. `dlopen()` intenta cargar la librería
+2. El loader busca `libassuan.so.0`
+3. Encuentra el enlace simbólico a `libassuan.so.9`
+4. Intenta resolver símbolos `LIBASSUAN_1.0`
+5. **Falla:** libassuan.so.9 solo tiene `LIBASSUAN_9.0`
+6. Firefox falla silenciosamente (no muestra el módulo)
 
----
-
-## 🛠️ Alternativas evaluadas (no implementadas)
-
-### Opción A: Máquina virtual
-
-Instalar Ubuntu 22.04 en una VM donde `libassuan0` todavía existe.
-
-**Ventajas:**
-- Solución oficial y garantizada
-- Funciona con Chrome
-
-**Desventajas:**
-- Overhead de VM
-- Paso adicional innecesario para uso ocasional
+Con OpenSC:
+1. `dlopen()` carga `/usr/lib/x86_64-linux-gnu/opensc-pkcs11.so`
+2. Todas las dependencias están satisfechas
+3. ✅ El módulo se carga correctamente
 
 ---
 
-### Opción B: Contenedor Docker
+## 📚 Lecciones aprendidas
 
-Crear un contenedor con Ubuntu 22.04 y acceso al lector USB.
+1. **El driver "oficial" no siempre es la mejor opción**
+   - A veces software de terceros (OpenSC) es superior
 
-**Problema:** El acceso a dispositivos USB desde Docker requiere privilegios y configuración compleja.
+2. **Compatibilidad hacia adelante es importante**
+   - libpkcs11-dnie no se mantiene para nuevas versiones de Ubuntu
+   - OpenSC se actualiza regularmente
 
----
+3. **Los enlaces simbólicos no son soluciones reales**
+   - Pueden crear la ilusión de funcionar
+   - Pero las incompatibilidades de símbolos persisten
 
-### Opción C: Compilar libpkcs11-dnie desde código fuente
-
-No hay código fuente disponible. El paquete `.deb` incluye binarios precompilados.
-
----
-
-## 📚 Fuentes consultadas
-
-1. **Guía 2tazasdelinux (2025):**
-   - https://2tazasdelinux.blogspot.com/2025/04/hacer-funcionar-dnie-en-ubuntu.html
-   - Proporciona scripts de configuración
-   - **No cubre Ubuntu 24.04** (solo 22.04)
-
-2. **Guía asanzdiego (2024):**
-   - https://www.asanzdiego.com/2024/08/configurar-un-lector-de-dni-electronico-en-firefox-con-autofirma-en-ubuntu-version-2024.html
-   - Explica configuración manual de Firefox
-   - Incluye soluciones para AutoFirma
-
-3. **Página oficial DNIe:**
-   - https://www.dnielectronico.es/
-   - Descarga de drivers oficiales
-   - Sin documentación específica para Ubuntu 24.04
-
-4. **Foros de Ubuntu:**
-   - Problemas similares reportados
-   - Sin soluciones oficiales
+4. **Software libre y mantenido activamente > Software abandonado**
+   - Aunque sea oficial del gobierno
 
 ---
 
-## 🎓 Lecciones aprendidas
+## 🔮 Recomendaciones futuras
 
-1. **Dependencias antiguas en software gubernamental:**
-   Los paquetes oficiales del gobierno no siguen el ritmo de actualizaciones de Ubuntu.
+### Para usuarios
+- Usar **OpenSC** en Ubuntu 24.04+
+- No perder tiempo con libpkcs11-dnie
 
-2. **Firefox vs Chrome en seguridad:**
-   Firefox tiene una arquitectura más flexible para módulos de seguridad.
-
-3. **Forzar dependencias es arriesgado pero funcional:**
-   `dpkg --force-depends` permite instalar paquetes con dependencias no satisfechas, pero puede romper el sistema si se usa incorrectamente.
-
-4. **Los enlaces simbólicos no siempre son suficientes:**
-   Funcionan para Firefox, pero Chrome hace validación más estricta.
-
----
-
-## 🔮 Futuro
-
-### Si libpkcs11-dnie se actualiza
-
-Idealmente, el gobierno debería:
-1. Actualizar `libpkcs11-dnie` para usar `libassuan9`
-2. Proporcionar paquetes para Ubuntu 24.04
-3. Publicar el código fuente
-
-### Si no se actualiza
-
-Los usuarios tendrán que seguir usando esta solución de enlace simbólico + Firefox.
+### Para el gobierno español
+1. Actualizar `libpkcs11-dnie` para usar libassuan9
+2. O simplemente **recomendar OpenSC** en la documentación oficial
+3. Publicar el código fuente de libpkcs11-dnie
 
 ---
 
 ## 📝 Notas finales
 
-- **Fecha de implementación:** Febrero 2026
+- **Fecha de solución final:** Febrero 2026
 - **Versión Ubuntu probada:** 24.04 LTS
-- **Lector probado:** Super Top microSD card reader (ID 14cd:1212)
-- **Estado:** ✅ Funcional con Firefox
+- **Lector probado:** C3PO LTC31 v2
+- **Driver usado:** OpenSC 0.26.1
+- **Estado:** ✅ Funcional y recomendado
 
 ---
 
-**Contacto:** Documentación creada por Alberto
-**Licencia:** Dominio público
+**Contacto:** Documentación creada por Alberto (@xukrutdonut)  
+**Licencia:** MIT

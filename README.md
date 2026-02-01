@@ -52,11 +52,18 @@ El paquete oficial `libpkcs11-dnie` de la Policía Nacional depende de `libassua
 
 ---
 
-## ✅ Solución implementada
+## ✅ Solución implementada: OpenSC
 
-1. **Crear enlace simbólico** de `libassuan.so.9` → `libassuan.so.0`
-2. **Forzar instalación** del paquete `libpkcs11-dnie` ignorando dependencias
-3. **Configurar solo Firefox** (Chrome requiere módulos NSS incompatibles)
+En lugar de usar el driver oficial problemático (`libpkcs11-dnie`), usamos **OpenSC**, que:
+- ✅ Está disponible nativamente en Ubuntu 24.04
+- ✅ No requiere dependencias antiguas
+- ✅ Funciona perfectamente con DNIe español
+- ✅ Es software libre y mantenido activamente
+
+**Pasos simples:**
+1. Instalar OpenSC
+2. Configurar Firefox para usar `opensc-pkcs11.so`
+3. ¡Listo!
 
 ---
 
@@ -66,42 +73,10 @@ El paquete oficial `libpkcs11-dnie` de la Policía Nacional depende de `libassua
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y pcscd pcsc-tools libccid libnss3-tools pinentry-gtk2
+sudo apt-get install -y pcscd pcsc-tools opensc
 ```
 
-### 2. Crear enlace simbólico para libassuan
-
-```bash
-sudo ln -sf /lib/x86_64-linux-gnu/libassuan.so.9 /lib/x86_64-linux-gnu/libassuan.so.0
-```
-
-Verificar:
-```bash
-ls -la /lib/x86_64-linux-gnu/libassuan.so*
-```
-
-Deberías ver:
-```
-lrwxrwxrwx 1 root root 36 libassuan.so.0 -> /lib/x86_64-linux-gnu/libassuan.so.9
-lrwxrwxrwx 1 root root 18 libassuan.so.9 -> libassuan.so.9.0.2
-```
-
-### 3. Descargar e instalar libpkcs11-dnie
-
-```bash
-cd /tmp
-wget https://www.dnielectronico.es/descargas/CSP_para_Sistemas_Unix/libpkcs11-dnie_1.6.8_amd64.deb
-sudo dpkg -i --force-depends libpkcs11-dnie_1.6.8_amd64.deb
-```
-
-**Importante:** Durante la instalación puede intentar abrir Firefox. Ciérralo para que la instalación continúe.
-
-Verificar instalación:
-```bash
-dpkg -l | grep libpkcs11-dnie
-```
-
-### 4. Verificar lector de tarjetas
+### 2. Verificar lector de tarjetas
 
 Conecta el lector USB y verifica:
 
@@ -122,7 +97,20 @@ pcsc_scan
 
 Deberías ver información del DNIe. Presiona `Ctrl+C` para salir.
 
-### 5. Configurar Firefox
+### 3. Verificar que OpenSC detecta el DNIe
+
+```bash
+pkcs11-tool --module /usr/lib/x86_64-linux-gnu/opensc-pkcs11.so --list-slots
+```
+
+Deberías ver:
+```
+Slot 0: [Tu lector]
+  token label        : DNI electrónico
+  token manufacturer : DGP-FNMT
+```
+
+### 4. Configurar Firefox
 
 #### Opción A: Script automático
 
@@ -132,8 +120,8 @@ sleep 1
 
 # Crear archivo de configuración
 cat > /tmp/pkcs11.txt << 'EOF'
-library=/usr/lib/libpkcs11-dnie.so
-name=DNI-e
+library=/usr/lib/x86_64-linux-gnu/opensc-pkcs11.so
+name=OpenSC
 EOF
 
 # Instalar en todos los perfiles
@@ -151,17 +139,9 @@ find ~/.mozilla/firefox -name "pkcs11.txt"
 2. Ve a **Preferencias** → **Privacidad y Seguridad**
 3. Desplázate hasta **Certificados** → **Dispositivos de seguridad**
 4. Clic en **Cargar**
-5. Nombre del módulo: `DNI-e`
-6. Ruta del archivo: `/usr/lib/libpkcs11-dnie.so`
+5. Nombre del módulo: `OpenSC`
+6. Ruta del archivo: `/usr/lib/x86_64-linux-gnu/opensc-pkcs11.so`
 7. Aceptar
-
-#### Agregar certificado raíz (opcional pero recomendado)
-
-1. En Firefox: **Preferencias** → **Privacidad y Seguridad** → **Ver certificados**
-2. Pestaña **Autoridades** → **Importar**
-3. Selecciona: `/usr/share/libpkcs11-dnie/ac_raiz_dnie.crt`
-4. Marca todas las casillas de confianza
-5. Aceptar
 
 ---
 
@@ -171,15 +151,16 @@ find ~/.mozilla/firefox -name "pkcs11.txt"
 
 1. Inserta el DNIe en el lector
 2. Abre Firefox
-3. Ve a: https://www.sede.fnmt.gob.es/certificados/persona-fisica/verificar-estado/solicitar-verificacion
-4. Te pedirá el **PIN del DNIe** (código que te dieron en comisaría)
-5. Si funciona, verás tus datos personales
+3. Ve a: **https://valide.redsara.es/valide/**
+4. Clic en **"Validar Certificado"** o sitio similar que requiera certificado
+5. Te pedirá el **PIN del DNIe** (código que te dieron en comisaría)
+6. Si funciona, verás tus datos personales
 
 ### Verificar dispositivos de seguridad
 
 En Firefox:
 - `about:preferences#privacy` → Dispositivos de seguridad
-- Deberías ver **DNI-e** en la lista
+- Deberías ver **OpenSC** en la lista
 
 ---
 
@@ -241,12 +222,7 @@ Si usas **AutoFirma**, necesitas tener **solo el perfil `default-release`**.
 
 ### Chrome/Chromium NO funciona
 
-Google Chrome requiere configurar el módulo NSS, pero `modutil` falla por incompatibilidad de `libassuan`:
-
-```bash
-modutil -add "DNI-e" -libfile /usr/lib/libpkcs11-dnie.so -dbdir sql:$HOME/.pki/nssdb
-# ERROR: version `LIBASSUAN_1.0' not found
-```
+Google Chrome no funciona con esta solución debido a limitaciones del sistema NSS.
 
 **Solución:** Usar **solo Firefox** para DNIe en Ubuntu 24.04.
 
